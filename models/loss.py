@@ -58,16 +58,14 @@ class Loss(nn.Module):
 
         for loss_name in self.losses_to_apply:
             if loss_name in ["clip_conv_loss"]:
-                conv_loss = self.loss_mapper[loss_name](
-                    sketches, targets, mode)
+                # find loss from image encoder and intermediate layers
+                conv_loss = self.loss_mapper[loss_name](sketches, targets, mode)
                 for layer in conv_loss.keys():
                     losses_dict[layer] = conv_loss[layer]
             elif loss_name == "l2":
-                losses_dict[loss_name] = self.loss_mapper[loss_name](
-                    sketches, targets).mean()
+                losses_dict[loss_name] = self.loss_mapper[loss_name](sketches, targets).mean()
             else:
-                losses_dict[loss_name] = self.loss_mapper[loss_name](
-                    sketches, targets, mode).mean()
+                losses_dict[loss_name] = self.loss_mapper[loss_name](sketches, targets, mode).mean()
             # loss = loss + self.loss_mapper[loss_name](sketches, targets).mean() * loss_coeffs[loss_name]
 
         for key in self.losses_to_apply:
@@ -416,10 +414,11 @@ class CLIPConvLoss(torch.nn.Module):
                 augmented_pair = self.augment_trans(torch.cat([x, y]))
                 sketch_augs.append(augmented_pair[0].unsqueeze(0))
                 img_augs.append(augmented_pair[1].unsqueeze(0))
-
+        
         xs = torch.cat(sketch_augs, dim=0).to(self.device)
         ys = torch.cat(img_augs, dim=0).to(self.device)
-
+        
+        
         if self.clip_model_name.startswith("RN"):
             xs_fc_features, xs_conv_features = self.forward_inspection_clip_resnet(
                 xs.contiguous())
@@ -429,18 +428,19 @@ class CLIPConvLoss(torch.nn.Module):
         else:
             xs_fc_features, xs_conv_features = self.visual_encoder(xs)
             ys_fc_features, ys_conv_features = self.visual_encoder(ys)
-
+        
+        # compute L_distance in equation 2 (default: L2-norm)
         conv_loss = self.distance_metrics[self.clip_conv_loss_type](
             xs_conv_features, ys_conv_features, self.clip_model_name)
-
+        
         for layer, w in enumerate(self.args.clip_conv_layer_weights):
-            if w:
+            if w:       # if weight for the specific layer is not zero, then add the corresponding loss to dictionary
                 conv_loss_dict[f"clip_conv_loss_layer{layer}"] = conv_loss[layer] * w
-
+        
         if self.clip_fc_loss_weight:
             # fc distance is always cos
-            fc_loss = (1 - torch.cosine_similarity(xs_fc_features,
-                       ys_fc_features, dim=1)).mean()
+            # compute L_semantic in equation 1
+            fc_loss = (1 - torch.cosine_similarity(xs_fc_features, ys_fc_features, dim=1)).mean()
             conv_loss_dict["fc"] = fc_loss * self.clip_fc_loss_weight
 
         self.counter += 1

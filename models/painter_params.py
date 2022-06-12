@@ -89,7 +89,7 @@ class Painter(torch.nn.Module):
 
             for i in range(num_paths_exists, self.num_paths):
                 stroke_color = torch.tensor([0.0, 0.0, 0.0, 1.0])
-                path = self.get_path()
+                path = self.get_path()          # path.points has a list of 4 control points for a beizer curve
                 self.shapes.append(path)
                 path_group = pydiffvg.ShapeGroup(shape_ids = torch.tensor([len(self.shapes) - 1]),
                                                     fill_color = None,
@@ -121,9 +121,10 @@ class Painter(torch.nn.Module):
         self.num_control_points = torch.zeros(self.num_segments, dtype = torch.int32) + (self.control_points_per_seg - 2)
         p0 = self.inds_normalised[self.strokes_counter] if self.attention_init else (random.random(), random.random())
         points.append(p0)
-
+        
         for j in range(self.num_segments):
             radius = 0.05
+            # incrementally adding points
             for k in range(self.control_points_per_seg - 1):
                 p1 = (p0[0] + radius * (random.random() - 0.5), p0[1] + radius * (random.random() - 0.5))
                 points.append(p1)
@@ -152,6 +153,8 @@ class Painter(torch.nn.Module):
                 eps = 0.01 * min(self.canvas_width, self.canvas_height)
                 for path in self.shapes:
                     path.points.data.add_(eps * torch.randn_like(path.points))
+        
+        # rasterizer
         scene_args = pydiffvg.RenderFunction.serialize_scene(\
             self.canvas_width, self.canvas_height, self.shapes, self.shape_groups)
         img = _render(self.canvas_width, # width
