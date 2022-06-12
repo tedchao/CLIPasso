@@ -68,19 +68,21 @@ def get_target(args):
 
 
 def main(args):
-    loss_func = Loss(args)
+    loss_func = Loss(args) 
     inputs, mask = get_target(args)
     utils.log_input(args.use_wandb, 0, inputs, args.output_dir)
     renderer = load_renderer(args, inputs, mask)
 
     optimizer = PainterOptimizer(args, renderer)
+    
     counter = 0
     configs_to_save = {"loss_eval": []}
     best_loss, best_fc_loss = 100, 100
     best_iter, best_iter_fc = 0, 0
     min_delta = 1e-5
     terminate = False
-
+    
+    # initialization
     renderer.set_random_noise(0)
     img = renderer.init_image(stage=0)
     optimizer.init_optimizers()
@@ -97,20 +99,23 @@ def main(args):
         renderer.set_random_noise(epoch)
         if args.lr_scheduler:
             optimizer.update_lr(counter)
-
+        
+        # optimization step
         start = time.time()
         optimizer.zero_grad_()
-        sketches = renderer.get_image().to(args.device)
-        losses_dict = loss_func(sketches, inputs.detach(
-        ), renderer.get_color_parameters(), renderer, counter, optimizer)
+        sketches = renderer.get_image().to(args.device)     # intermediate raster output
+        losses_dict = loss_func(sketches, inputs.detach(), renderer.get_color_parameters(), renderer, counter, optimizer)
         loss = sum(list(losses_dict.values()))
         loss.backward()
         optimizer.step_()
+        #print(renderer.shapes[0].points)           # optimizer updates point positions
+        
         if epoch % args.save_interval == 0:
             utils.plot_batch(inputs, sketches, f"{args.output_dir}/jpg_logs", counter,
                              use_wandb=args.use_wandb, title=f"iter{epoch}.jpg")
             renderer.save_svg(
                 f"{args.output_dir}/svg_logs", f"svg_iter{epoch}")
+        
         if epoch % args.eval_interval == 0:
             with torch.no_grad():
                 losses_dict_eval = loss_func(sketches, inputs, renderer.get_color_parameters(
@@ -175,7 +180,7 @@ def main(args):
     return configs_to_save
 
 if __name__ == "__main__":
-    args = config.parse_arguments()
+    args = config.parse_arguments()         # this is just default arguments
     final_config = vars(args)
     try:
         configs_to_save = main(args)
